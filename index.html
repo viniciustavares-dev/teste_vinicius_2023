@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Proposta de Plano de Saúde</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="container">
+    <h1>Proposta de Plano de Saúde</h1>
+    <form id="proposalForm">
+      <label for="quantidade_beneficiarios"><b>Número de beneficiários:</b></label>
+      <input style="width: 100px;" type="number" id="quantidade_beneficiarios" name="quantidade_beneficiarios" placeholder="Digite aqui" required>
+
+      <div id="beneficiariosFields"></div>
+      
+      <div class="buttons-container">
+        <!-- Submit button -->
+        <button class="redirect-button" type="submit">Enviar Proposta</button>
+  
+        <!-- Anchor link with encapsulated button -->
+        <a href="http://localhost/teste_vinicius_tavares/propostas.php">
+          <button type="button" class="redirect-button">Ver Propostas</button>
+        </a>
+      </div>
+    </form>
+    <div id="result"></div>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>
