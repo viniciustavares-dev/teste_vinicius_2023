@@ -1,99 +1,86 @@
 <?php
-$plansJson = '[ /* ... Plan JSON data ... */ ]';
 
-$pricesJson = '[ /* ... Price JSON data ... */ ]';
-
-$plans = json_decode($plansJson, true);
-$prices = json_decode($pricesJson, true);
-
-function calculatePrice($planCode, $age) {
-  global $prices;
-  $ageCategory = ($age <= 17) ? 'faixa1' : (($age <= 40) ? 'faixa2' : 'faixa3');
-
-  foreach ($prices as $price) {
-    if ($price['codigo'] == $planCode && $price['minimo_vidas'] <= 1) {
-      return $price[$ageCategory];
-    }
-  }
-  return 0;
-}
-
-function validateData($data) {
-  $errors = [];
-
-  if (empty($data['quantidade_beneficiarios'])) {
-    $errors[] = "Número de beneficiários não foi informado.";
-  } else if (!ctype_digit($data['quantidade_beneficiarios'])) {
-    $errors[] = "Número de beneficiários deve ser um valor inteiro positivo.";
-  }
-
-  return $errors;
-}
-
-if ($_SERVER["REQUEST_METHOD"] === "POST") {
-  $requestData = json_decode(file_get_contents("php://input"), true);
-
-  $validationErrors = validateData($requestData);
-
-  if (!empty($validationErrors)) {
-    http_response_code(400);
-    echo json_encode(["errors" => $validationErrors]);
-    exit;
-  }
-
-  $beneficiaries = [];
-  $totalPrice = 0;
-
-  for ($i = 1; $i <= $requestData['quantidade_beneficiarios']; $i++) {
-    $ageKey = "idade_$i";
-    $planKey = "registro_plano_$i";
-
-    if (empty($requestData[$ageKey]) || empty($requestData[$planKey])) {
-      continue;
-    }
-
-    $age = (int) $requestData[$ageKey];
-    $planCode = $requestData[$planKey];
-
-    $selectedPlan = null;
-    foreach ($plans as $plan) {
-      if ($plan['registro'] === $planCode) {
-        $selectedPlan = $plan;
-        break;
-      }
-    }
-
-    if ($selectedPlan) {
-      $price = calculatePrice($selectedPlan['codigo'], $age);
-
-      $beneficiary = [
-        "nome" => $requestData["nome_$i"],
-        "idade" => $age,
-        "plano" => $selectedPlan,
-        "preco" => $price,
-      ];
-
-      $beneficiaries[] = $beneficiary;
-      $totalPrice += $price;
-    } else {
-      // Return error for invalid planCode
-      http_response_code(400);
-      echo json_encode(["error" => "Plano inválido: $planCode"]);
-      exit;
-    }
-  }
-
-  $proposal = [
-    "quantidade_beneficiarios" => $requestData['quantidade_beneficiarios'],
-    "beneficiarios" => $beneficiaries,
-    "preco_total" => $totalPrice,
-  ];
-
+// Função para salvar a proposta no arquivo JSON
+function saveProposal($proposal) {
+  // Ler as propostas existentes do arquivo JSON
   $proposalsJson = file_exists("proposta.json") ? file_get_contents("proposta.json") : "[]";
   $proposals = json_decode($proposalsJson, true);
-  $proposals[] = $proposal;
-  file_put_contents("proposta.json", json_encode($proposals, JSON_PRETTY_PRINT));
 
-  echo json_encode($proposal, JSON_PRETTY_PRINT);
+  // Gerar o hash da idade de cada beneficiário
+  foreach ($proposal['beneficiarios'] as &$beneficiary) {
+    $beneficiary['idade_hash'] = password_hash($beneficiary['idade'], PASSWORD_BCRYPT);
+  }
+
+  // Adicionar a nova proposta à lista de propostas
+  $proposals[] = $proposal;
+
+  // Salvar a lista atualizada de propostas no arquivo JSON
+  file_put_contents("proposta.json", json_encode($proposals));
 }
-?>
+
+// Função para carregar as propostas do arquivo JSON
+function loadProposals() {
+  // Ler as propostas do arquivo JSON
+  $proposalsJson = file_exists("proposta.json") ? file_get_contents("proposta.json") : "[]";
+  $proposals = json_decode($proposalsJson, true);
+
+  // Verificar o hash da idade de cada beneficiário
+  foreach ($proposals as &$proposal) {
+    foreach ($proposal['beneficiarios'] as &$beneficiary) {
+      // Verificar se a idade corresponde ao hash
+      if (!password_verify($beneficiary['idade'], $beneficiary['idade_hash'])) {
+        // Idade inválida, remover o beneficiário
+        unset($beneficiary);
+      }
+      // Remover o hash da idade para não ser exibido na página
+      unset($beneficiary['idade_hash']);
+    }
+    // Remover beneficiários vazios (com idade inválida)
+    $proposal['beneficiarios'] = array_values($proposal['beneficiarios']);
+  }
+
+  return $proposals;
+}
+
+// Rotas da API
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+  // Verificar se os dados foram enviados corretamente
+  if (isset($_POST['quantidade_beneficiarios'], $_POST['beneficiarios'], $_POST['registro_plano'])) {
+    // Coletar os dados do formulário
+    $quantidadeBeneficiarios = $_POST['quantidade_beneficiarios'];
+    $beneficiarios = $_POST['beneficiarios'];
+    $registroPlano = $_POST['registro_plano'];
+
+    // Montar a proposta
+    $proposal = [
+      'quantidade_beneficiarios' => $quantidadeBeneficiarios,
+      'beneficiarios' => $beneficiarios,
+      'registro_plano' => $registroPlano,
+    ];
+
+    // Salvar a proposta no arquivo JSON
+    saveProposal($proposal);
+
+    // Retornar uma resposta de sucesso
+    header('Content-Type: application/json');
+    echo json_encode(['message' => 'Proposta salva com sucesso!']);
+    exit;
+  } else {
+    // Caso algum dado esteja faltando, retornar uma mensagem de erro
+    header('Content-Type: application/json', true, 400);
+    echo json_encode(['errors' => ['Campos obrigatórios não foram preenchidos.']]);
+    exit;
+  }
+} elseif ($_SERVER['REQUEST_METHOD'] === 'GET') {
+  // Carregar as propostas existentes e retornar como resposta
+  $proposals = loadProposals();
+  header('Content-Type: application/json');
+  echo json_encode($proposals);
+  exit;
+} else {
+  // Método HTTP não suportado
+  header('Content-Type: application/json', true, 405);
+  echo json_encode(['errors' => ['Método não suportado.']]);
+  exit;
+}
